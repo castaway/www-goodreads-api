@@ -1,0 +1,6 @@
+
+WWW::Goodreads::API
+===================
+
+A Perl module to connect to the http://www.goodreads.com/api
+
