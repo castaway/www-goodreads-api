@@ -86,6 +86,7 @@ sub call_method {
         $http_method = $api_methods{$method}{http_method};
         $content_in = $api_methods{$method}{content_in};
 
+        $params = { %{$api_methods{$method}{default_params} || {}}, %$params };
         $method = $api_methods{$method}{api} if(exists $api_methods{$method}{api});
     }
 
