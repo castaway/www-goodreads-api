@@ -143,7 +143,7 @@ sub call_method {
     my $content = $response->content;
 
     if ($content_in eq 'xml') {
-        $content = XMLin($content);
+        $content = XMLin($content, SuppressEmpty => '');
     }
 
     return $content;
