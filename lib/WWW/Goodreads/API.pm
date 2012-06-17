@@ -17,6 +17,58 @@ use Business::ISBN;
 ## for signed requests
 use Net::OAuth;
 
+our $VERSION = '0.001';
+
+=head1 NAME
+
+WWW::Goodreads::API - Interact with the goodreads.com api
+
+=head1 SYNOPSIS
+
+    my $api = WWW::Goodreads::API->new(
+      dev_key => $mydevkey,
+      dev_secret => $mydevsecret,
+      oauth_token => $myoauthtoken,
+      oauth_secret => $myoauthsecret,
+    );
+
+    my $user_data = $api->call_method('auth_user');
+
+    my $user_books = $api->call_method('review.list', { page => 1 } );
+
+=head1 DESCRIPTION
+
+This is a thinnish wrapper over the goodreads.com api (see
+L<http://goodreads.com/api>. It retrieves XML content for the various
+API methods, some of which require authentication, and returns the
+result passed through XML::Simple.
+
+Note that the API documentation is incorrect in places, especially the
+protected methods. This module is a result of some experimentation.
+
+To use this module you will need to sign up for a goodreads developer
+key, then jump through some OAuth hoops to get your OAuth access
+token. Once fetched this token can be stored and re-used.
+
+=head1 ATTRIBUTES
+
+The developer key and secret are provided by the goodreads.com
+website, go here to get one:
+L<http://www.goodreads.com/api/keys>. Note also the terms of use while
+you are there.
+
+=head2 dev_key
+
+=head2 dev_secret
+
+The oauth token and secret are obtained by logging in with the goodreads api, see L<http://www.goodreads.com/api/documentation#oauth>.
+
+=head2 oauth_token
+
+=head2 oauth_secret
+
+=cut
+
 # goodreads api key/secret
 has dev_key => (isa => sub { $_[0] =~ /^\w+$/ }, is => 'rw', required => 0);
 has dev_secret => (isa => sub { $_[0] =~ /^\w+$/ }, is => 'rw', required => 0);
@@ -24,6 +76,30 @@ has dev_secret => (isa => sub { $_[0] =~ /^\w+$/ }, is => 'rw', required => 0);
 # oauth access/secret
 has oauth_token => (isa => sub { $_[0] =~ /^\w+$/ }, is => 'rw', required => 0);
 has oauth_secret => (isa => sub { $_[0] =~ /^\w+$/ }, is => 'rw', required => 0);
+
+=head1 API METHODS
+
+So far the following methods have been tested/configured:
+
+=over
+
+=item auth_user
+
+=item user.show
+
+=item book.show
+
+=item shelves.list
+
+=item author.books
+
+=item owned_books.list
+
+=item review.list
+
+=back
+
+=cut
 
 my %api_methods = (
     auth_user => { 
@@ -44,7 +120,7 @@ my %api_methods = (
         protected => 0,
         content_in => 'xml',
     },
-    list_shelves => {
+    'shelves.list' => {
         api => 'shelf/list.xml',
         http_method => 'GET',
         protected => 0,
@@ -74,6 +150,27 @@ my %api_methods = (
      },
 );
 
+=head1 METHODS
+
+=head2 call_method
+
+=head3 Arguments: $method_name, $params_hashref, $protected_flag, $http_method
+
+=head3 Returns: XML::Simple-parsed perl data structure
+
+Call an api method. If passed an api method name from the list above,
+will use internal settings to determine whether it is a protected
+method, and which default parameters to send to it. If the method name
+is not recognised, will just try to call it anyway.
+
+  $api->call_method('book.show', { id => $mybookid });
+
+  $api->call_method('book/show', { id => $mybookid }, 0, 'GET');
+
+=cut
+
+## TODO: Track calls and ensure that each is not called more than once
+## per secord.
 sub call_method {
     my ($self, $method, $params, $protected, $http_method) = @_;
     ## The api page names methods with foo.bar, the uri is actually foo/bar
@@ -90,7 +187,7 @@ sub call_method {
         $method = $api_methods{$method}{api} if(exists $api_methods{$method}{api});
     }
 
-    # FIXME: merge these more elegantly.
+    # FIXME: merge normal/protected more elegantly.
     my $response;
     my $goodreads_api_url = URI->new("http://www.goodreads.com");
 
