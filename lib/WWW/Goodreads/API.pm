@@ -32,11 +32,46 @@ my %api_methods = (
         protected => 1,
         content_in => 'xml',
     },
-    show_user => { 
+    'user.show' => { 
+        api => 'user/show',
+        http_method => 'GET', 
+        protected => 1,
+        content_in => 'xml',
+    },
+    'book.show' => { 
+        api => 'book/show',
         http_method => 'GET', 
         protected => 0,
         content_in => 'xml',
     },
+    list_shelves => {
+        api => 'shelf/list.xml',
+        http_method => 'GET',
+        protected => 0,
+        content_in => 'xml',
+    },
+    'author.books' => {
+        api => 'author/list.xml',
+        http_method => 'GET',
+        protected => 0,
+        content_in => 'xml',
+    },
+    'owned_books.list' => {
+        api => 'owned_books/user',
+        http_method => 'GET',
+        protected => 1,
+        content_in => 'xml',
+    },
+    'review.list' => {
+        api => 'review/list',
+        http_method => 'GET',
+        protected => 1,
+        content_in => 'xml',
+        default_params => {
+#            v => 2,
+            format => 'xml',
+        },
+     },
 );
 
 sub call_method {
@@ -77,7 +112,7 @@ sub call_method {
         ## Method will often consist of multiple path segments.
         $goodreads_api_url->path($method);
 
-        say "Fetching: $goodreads_api_url";
+        print STDERR "Fetching: $goodreads_api_url\n";
 
         $response = $ua->get($goodreads_api_url);
     }
@@ -138,15 +173,15 @@ sub _call_protected_method {
        );
 
     $oauth_request->sign;
-#    print STDERR "Calling: ", $oauth_request->request_url, "\n";
+#     print STDERR "Calling: ", $oauth_request->request_url, "\n";
 
     my $response;
     if ($http_method eq 'GET') {
-        print "Fetching ".$oauth_request->request_url." (protected GET)\n";
+        print STDERR "Fetching ".$oauth_request->request_url." (protected GET)\n";
         $response = $ua->get($oauth_request->request_url, #to_url 
                             Authorization => $oauth_request->to_authorization_header );
     } else {
-        print "Fetching ".$oauth_request->request_url." (protected POST)\n";
+        print STDERR "Fetching ".$oauth_request->request_url." (protected POST)\n";
         $response = $ua->post($oauth_request->request_url,
                               $params,
                               Authorization => $oauth_request->to_authorization_header );
