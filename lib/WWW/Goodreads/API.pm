@@ -157,6 +157,11 @@ sub _call_protected_method {
 
     my $gr_url = URI->new('http://www.goodreads.com');
     $gr_url->path($method);
+    if(exists $params->{id}) {
+        $gr_url->path("$method/$params->{id}.xml");
+    }
+    $gr_url->query_form_hash($params)
+        if ($params);
 
 #    print STDERR "Calling: $gr_url\n";
 
@@ -296,9 +301,12 @@ L<http://www.goodreads.com/api#user.show>
 sub show_user {
     my ($api, %params) = @_;
 
-    my $xml = $api->call_method('user/show/' . ($params{id}||$params{username}) . '.xml', {}, 1); 
+    return $api->call_method('user.show',
+                             { id => $params{id}, }
+        );
+#    my $xml = $api->call_method('user/show/' . ($params{id}||$params{username}) . '.xml', {}, 1); 
 
-    return XMLin($xml);
+#    return XMLin($xml);
 }
 
 sub get_updates {
