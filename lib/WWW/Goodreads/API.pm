@@ -83,6 +83,10 @@ So far the following methods have been tested/configured:
 
 =over
 
+=item search
+
+Params: q (query), page #, key, search[field] (title, author, all)
+
 =item auth_user
 
 =item user.show
@@ -97,11 +101,43 @@ So far the following methods have been tested/configured:
 
 =item review.list
 
+Params: v=2 (default, else you get books not reviews), id (user id), shelf (read|currently-reading|to-read|etc), sort, search[query], order (a,d), page (1-N), per_page (1-200), key (dev key)
+
+=item review.create
+
+Params: book_id, review[review] (text, optional), review[rating] (0-5, optional, default 0 = none), review[read_at] (YYYY-MM-DD, optional), shelf read|currently-reading|to-read|<USER_SHELF_NAME> (optional, must exist)
+
+=item review.edit
+
+Params: id (review id),  (see review.create)
+
+=item show_by_user_and_book
+
+Find exact review (book_id/user_id)
+
 =back
 
 =cut
 
 my %api_methods = (
+    'search' => {
+        api => 'search/index.xml',
+        http_method => 'GET',
+        protected => 0,
+        content_in => 'xml',
+    },
+    'isbn_to_book' => {
+        api => 'book/isbn_to_id',
+        http_method => 'GET',
+        protected => 0,
+        content_in => 'plain',
+    },
+    'show_by_user_and_book' => {
+        api => 'review/show_by_user_and_book.xml',
+        http_method => 'GET',
+        protected => 1,
+        content_in => 'xml',
+    },
     auth_user => { 
         api => 'api/auth_user', 
         http_method => 'GET', 
@@ -117,8 +153,11 @@ my %api_methods = (
     'book.show' => { 
         api => 'book/show',
         http_method => 'GET', 
-        protected => 0,
+        protected => 1,
         content_in => 'xml',
+        default_params => {
+            format => 'xml',
+        },
     },
     'shelves.list' => {
         api => 'shelf/list.xml',
@@ -144,10 +183,23 @@ my %api_methods = (
         protected => 1,
         content_in => 'xml',
         default_params => {
-#            v => 2,
+            v => 2,
             format => 'xml',
         },
      },
+     'review.create' => {
+        api => 'review.xml',
+        http_method => 'POST',
+        protected => 1,
+        content_in => 'xml',
+     },
+     'review.edit' => {
+        api => 'review',
+        http_method => 'PUT',
+        protected => 1,
+        content_in => 'xml',
+     },
+
 );
 
 =head1 METHODS
@@ -173,6 +225,7 @@ is not recognised, will just try to call it anyway.
 ## per secord.
 sub call_method {
     my ($self, $method, $params, $protected, $http_method) = @_;
+    $params ||= {};
     ## The api page names methods with foo.bar, the uri is actually foo/bar
     ## but some method names end in .xml.
     ##$method =~ s!\.!\/!g;
@@ -189,7 +242,7 @@ sub call_method {
 
     # FIXME: merge normal/protected more elegantly.
     my $response;
-    my $goodreads_api_url = URI->new("http://www.goodreads.com");
+    my $goodreads_api_url = URI->new("https://www.goodreads.com");
 
     if($protected) {
         $response = $self->_call_protected_method($method, $params, $http_method);
@@ -217,6 +270,7 @@ sub call_method {
 
     if (!$response->is_success)
     {
+#        print STDERR Data::Dumper::Dumper($response);
         if ($response->content =~ m/<html>/ or 
             $response->content =~ m/not authorized/i
             #$response->content =~ m!<error>book not found</error>!
@@ -233,6 +287,10 @@ sub call_method {
         }
         
         # This is the specific API deciding that we failed.  Make it produce something that can be nicely handled by an eval {}.
+        if($response->code == 404) {
+            ## eg: show_by_user_and_book returns a 404 for "no such review"
+            return {};
+        }
         die $response->content;
         
     }
@@ -252,13 +310,16 @@ sub _call_protected_method {
     $http_method ||= 'GET';
     $http_method = uc $http_method;
 
-    my $gr_url = URI->new('http://www.goodreads.com');
+    my $gr_url = URI->new('https://www.goodreads.com');
     $gr_url->path($method);
-    if(exists $params->{id}) {
-        $gr_url->path("$method/$params->{id}.xml");
+    if(exists $params->{_id}) {
+        $gr_url->path("$method/$params->{_id}.xml");
+        delete $params->{_id};
     }
-    $gr_url->query_form_hash($params)
-        if ($params);
+    if($http_method eq 'GET') {
+        $gr_url->query_form_hash($params)
+            if ($params);
+    }
 
 #    print STDERR "Calling: $gr_url\n";
 
@@ -280,11 +341,11 @@ sub _call_protected_method {
 
     my $response;
     if ($http_method eq 'GET') {
-        print STDERR "Fetching ".$oauth_request->request_url." (protected GET)\n";
+#        print STDERR "Fetching ".$oauth_request->request_url." (protected GET)\n";
         $response = $ua->get($oauth_request->request_url, #to_url 
                             Authorization => $oauth_request->to_authorization_header );
     } else {
-        print STDERR "Fetching ".$oauth_request->request_url." (protected POST)\n";
+#        print STDERR "Fetching ".$oauth_request->request_url." (protected POST)\n";
         $response = $ua->post($oauth_request->request_url,
                               $params,
                               Authorization => $oauth_request->to_authorization_header );
@@ -300,15 +361,14 @@ sub _call_protected_method {
 sub books {
     my ($api, $params) = @_;
 
-    my $method = 'search/index.xml';
-
     print Dumper($params);
     print "books($api, ".join(' // ', %$params)."\n";
 
     my $results = {};
 
-    $results = $api->call_method($method, {
+    $results = $api->call_method('search', {
         'q' => (($params->{title}||'') . '   ' . ($params->{author}||'')),
+        v => 1,
     });
 
 
@@ -324,12 +384,12 @@ sub books {
     #                                      });
     # }
 
-    my $xml = XMLin($results, 
-                    ForceArray => ['work'],
-                    KeyAttr => [],
-        );
+    # my $xml = XMLin($results, 
+    #                 ForceArray => ['work'],
+    #                 KeyAttr => [],
+    #     );
 #    print Dumper($xml);
-    my $works = $xml->{search}{results}{work};
+    my $works = $results->{search}{results}{work};
 
     #print "Found: ", Dumper($works);
     my @books = grep { $_->{best_book}{title} =~ /\Q$params->{title}\E/i
@@ -356,7 +416,7 @@ sub book_isbn_to_id {
     $isbn = Business::ISBN->new($isbn)->as_isbn13->as_string([]);
     my $res;
     eval {
-        $res = $api->call_method('book/isbn_to_id', {isbn => $isbn});
+        $res = $api->call_method('isbn_to_book', {isbn => $isbn});
     };
     if ($@ =~ m/No book with that ISBN/) {
         return undef;
@@ -399,7 +459,7 @@ sub show_user {
     my ($api, %params) = @_;
 
     return $api->call_method('user.show',
-                             { id => $params{id}, }
+                             { _id => $params{id}, }
         );
 #    my $xml = $api->call_method('user/show/' . ($params{id}||$params{username}) . '.xml', {}, 1); 
 
@@ -470,8 +530,8 @@ L<http://www.goodreads.com/api#book.show>
 sub book_show {
     my ($api, %params) = @_;
 
-    my $book = $api->call_method('book/show/' . $params{book_id} . '.xml', {}, 1);
-    return XMLin($book);
+    my $book = $api->call_method('book.show', { '_id' => $params{book_id} });
+    return $book;
 }
 
 sub get_book_page {
@@ -507,5 +567,8 @@ sub find_goodreads_book {
 
     return $bookid;
 }
+
+# https://www.goodreads.com/review/list/4483033.xml?format=xml&key=BWesJL1RPsOPvWVcdjlfXQ&v=2&shelf=read&search[query]=Templar+legacy
+#  http://www.goodreads.com/review/list/4483033.xml?shelf=read&format=xml&id=4483033&search%5Bquery%5D=The+Templar+legacy
 
 'done coding';
